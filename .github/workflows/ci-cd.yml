@@ -1,0 +1,176 @@
+name: Dot Camp – CI/CD → Hugging Face Spaces
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  APP_NAME: dot-camp-selection-engine
+  # Set these in GitHub → Settings → Secrets and Variables
+  # HF_USERNAME   : your Hugging Face username / org
+  # HF_SPACE_NAME : your Space repo name  (e.g. dot-camp-engine)
+  # HF_TOKEN      : HF token with WRITE access to the Space
+
+# ── Jobs ──────────────────────────────────────────────────────────────────────
+
+jobs:
+
+  # ── 1. Lint & Format ────────────────────────────────────────────────────────
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install lint tools
+        run: pip install ruff black isort
+
+      - name: Ruff
+        run: ruff check . --output-format=github
+
+      - name: Black
+        run: black --check .
+
+      - name: isort
+        run: isort --check-only .
+
+  # ── 2. Test ─────────────────────────────────────────────────────────────────
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run pytest
+        run: |
+          pytest tests/ \
+            --cov=. \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            -v
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
+  # ── 3. Security scan ────────────────────────────────────────────────────────
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Bandit
+        run: |
+          pip install bandit
+          bandit -r . -x ./tests --severity-level medium
+
+  # ── 4. Deploy to Hugging Face Spaces ────────────────────────────────────────
+  #
+  #  Strategy: push the full repo to the HF Space git remote.
+  #  HF Spaces auto-rebuilds whenever its git repo receives a push.
+  #  No Docker build step needed here — HF handles it using your Dockerfile.
+  #
+  deploy:
+    name: Deploy → Hugging Face Space
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    # Deploy on pushes to main (production) or develop (preview space)
+    if: github.event_name == 'push'
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+      url: >-
+        https://huggingface.co/spaces/${{ secrets.HF_USERNAME }}/${{
+          github.ref == 'refs/heads/main'
+          && secrets.HF_SPACE_NAME
+          || format('{0}-staging', secrets.HF_SPACE_NAME)
+        }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # full history required for git push
+
+      - name: Configure git identity
+        run: |
+          git config user.email "ci-bot@github-actions"
+          git config user.name  "GitHub Actions"
+
+      # Determine target Space (prod vs staging)
+      - name: Set Space name
+        id: space
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "name=${{ secrets.HF_SPACE_NAME }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ secrets.HF_SPACE_NAME }}-staging" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          SPACE_REPO="https://USER:${HF_TOKEN}@huggingface.co/spaces/${{ secrets.HF_USERNAME }}/${{ steps.space.outputs.name }}"
+
+          # Add HF remote (ignore error if it already exists)
+          git remote add hf "$SPACE_REPO" 2>/dev/null || \
+            git remote set-url hf "$SPACE_REPO"
+
+          # Force-push current branch → HF Space main branch
+          git push hf HEAD:main --force
+
+          echo "✅ Pushed to https://huggingface.co/spaces/${{ secrets.HF_USERNAME }}/${{ steps.space.outputs.name }}"
+
+      # HF Spaces can take a minute to rebuild — poll the health endpoint
+      - name: Wait for Space to become healthy
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          SPACE_URL="https://${{ secrets.HF_USERNAME }}-${{ steps.space.outputs.name }}.hf.space"
+          echo "Waiting for Space at $SPACE_URL …"
+
+          for i in $(seq 1 20); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer $HF_TOKEN" \
+              "$SPACE_URL/_stcore/health" || true)
+
+            echo "Attempt $i – HTTP $STATUS"
+            if [[ "$STATUS" == "200" ]]; then
+              echo "✅ Space is healthy!"
+              exit 0
+            fi
+            sleep 15
+          done
+
+          echo "❌ Space did not become healthy in time."
+          exit 1
