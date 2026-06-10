@@ -137,41 +137,8 @@ def _render_manual_tab(active_config: dict) -> None:
     st.success(f"✅ **{name}** added. Total startups: {len(st.session_state['startups'])}")
 
 
-# ── Tab 2 – Typeform CSV (real export) ────────────────────────────────────────
 
-def _render_typeform_csv_tab(active_config: dict) -> None:
-    from mock_data import typeform_csv_to_apps
 
-    st.info(
-        "Upload the **CSV exported directly from Typeform** — works for both "
-        "English and French responses. Go to *Results → Export → Download as CSV*."
-    )
-    uploaded = st.file_uploader("Upload Typeform CSV", type=["csv"], key="tf_csv")
-    if not uploaded:
-        return
-
-    try:
-        text     = uploaded.read().decode("utf-8-sig")
-        new_apps = typeform_csv_to_apps(text)
-    except Exception as e:
-        st.error(f"Failed to parse CSV: {e}")
-        return
-
-    existing = _existing_names()
-    unique   = [a for a in new_apps if a["startup_name"].lower().strip() not in existing]
-    st.info(f"Found **{len(new_apps)}** application(s) · **{len(unique)}** new")
-
-    if unique:
-        with st.expander("Preview first 5 parsed apps"):
-            for a in unique[:5]:
-                st.markdown(
-                    f"**{a['startup_name']}** · {a.get('age','')} · "
-                    f"{a.get('sector','')} · maturity: {a.get('maturity','')} · "
-                    f"revenue: {a.get('generating_revenue','')} · "
-                    f"founder FT: {a.get('full_time_founder','')}"
-                )
-
-    _add_and_show(unique, active_config, "tf_csv")
 
 
 # ── Tab 3 – Google Form CSV (legacy) ─────────────────────────────────────────
@@ -375,16 +342,14 @@ def _render_ai_filter_builder_tab() -> None:
 
 def render_add_startup(active_config: dict) -> None:
     st.markdown("### ➕ Add new startup(s)")
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab3, tab4, tab5, tab6 = st.tabs([
         "✏️ Manual Entry",
-        "📄 Typeform CSV",
         "📋 Google Form CSV",
         "🗂 Typeform JSON",
         "🤖 AI Generate",
         "⚙️ AI Filter Builder",
     ])
     with tab1: _render_manual_tab(active_config)
-    with tab2: _render_typeform_csv_tab(active_config)
     with tab3: _render_gform_csv_tab(active_config)
     with tab4: _render_json_tab(active_config)
     with tab5: _render_ai_tab(active_config)
