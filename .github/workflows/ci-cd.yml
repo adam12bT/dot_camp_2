@@ -2,23 +2,17 @@ name: Dot Camp – CI/CD → Hugging Face Spaces
 
 on:
   push:
-    branches: [main, develop]
-  pull_request:
     branches: [main]
   workflow_dispatch:
 
 env:
   PYTHON_VERSION: "3.11"
 
-# ── Jobs ──────────────────────────────────────────────────────────────────────
-
 jobs:
 
-  # ── 1. Deploy to Hugging Face Space ─────────────────────────────────────────
   deploy:
     name: Deploy → huggingface.co/spaces/adamnouassida5/dot_camp
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: production
       url: https://huggingface.co/spaces/adamnouassida5/dot_camp
@@ -28,20 +22,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Configure git identity
-        run: |
-          git config user.email "ci-bot@github-actions"
-          git config user.name  "GitHub Actions"
-
       - name: Push to Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git remote add hf "https://adamnouassida5:${HF_TOKEN}@huggingface.co/spaces/adamnouassida5/dot_camp"
+          # Store credentials so git uses the token, not a password
+          git config --global credential.helper store
+          echo "https://adamnouassida5:${HF_TOKEN}@huggingface.co" > ~/.git-credentials
+
+          git remote add hf "https://huggingface.co/spaces/adamnouassida5/dot_camp"
           git push hf main --force
           echo "✅ Deployed to https://huggingface.co/spaces/adamnouassida5/dot_camp"
 
-      - name: Wait for Space to wake up
+      - name: Wait for Space to rebuild
         run: |
           echo "Waiting for Space to rebuild…"
           sleep 30
@@ -55,5 +48,5 @@ jobs:
             fi
             sleep 20
           done
-          echo "⚠️  Space is still building — check https://huggingface.co/spaces/adamnouassida5/dot_camp"
+          echo "⚠️  Still building — check https://huggingface.co/spaces/adamnouassida5/dot_camp"
           exit 0
