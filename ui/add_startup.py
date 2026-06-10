@@ -20,6 +20,14 @@ def _existing_names() -> set[str]:
     return {a["startup_name"].lower().strip() for a in st.session_state.get("startups", [])}
 
 
+def _style_decision(df):
+    """Apply color_decision to the Decision column — compatible with pandas 2.1+."""
+    styler = df.style
+    if hasattr(styler, "map"):
+        return styler.map(color_decision, subset=["Decision"])
+    return styler.applymap(color_decision, subset=["Decision"])
+
+
 def _add_and_show(unique: list, active_config: dict, key_suffix: str) -> None:
     """Evaluate, add to session state, show dataframe preview."""
     if not unique:
@@ -35,8 +43,7 @@ def _add_and_show(unique: list, active_config: dict, key_suffix: str) -> None:
             row[lbl] = res
         rows.append(row)
     df = pd.DataFrame(rows)
-    st.dataframe(df.style.applymap(color_decision, subset=["Decision"]),
-                 use_container_width=True, height=300)
+    st.dataframe(_style_decision(df), use_container_width=True, height=300)
     st.success(f"✅ {len(unique)} startup(s) added.")
     st.rerun()
 
@@ -235,7 +242,7 @@ Each dict MUST contain exactly these keys:
   startup_label, participated_programs
 
 Rules:
-- age: one of "Less than 2 years" | "2–5 years" | "5–7 years" | "More than 7 years"
+- age: one of "Less than 2 years" | "2-5 years" | "5-7 years" | "More than 7 years"
 - maturity: one of "Idea"|"POC finalized"|"Functional MVP"|"MVP currently being tested"|"Go To Market (Early sales)"|"Product/Service on the market"|"International Expansion"
 - total_employees / salaried_employees / num_clients: one of "None"|"1-2"|"3-5"|"6-10"|"+10"
 - legally_created, full_time_founder, founder_in_tunisia, gender_mixed,
@@ -300,8 +307,8 @@ OUTPUT: respond with ONLY a valid JSON array, no markdown, no explanation.
 
             if text.startswith("```"):
                 text = "\n".join(
-                    l for l in text.splitlines()
-                    if not l.strip().startswith("```")
+                    line for line in text.splitlines()
+                    if not line.strip().startswith("```")
                 ).strip()
 
             apps = json.loads(text)
@@ -317,7 +324,7 @@ OUTPUT: respond with ONLY a valid JSON array, no markdown, no explanation.
 
     existing = {a["startup_name"].lower().strip()
                 for a in st.session_state.get("startups", [])}
-    unique = [a for a in apps if a.get("startup_name","").lower().strip() not in existing]
+    unique = [a for a in apps if a.get("startup_name", "").lower().strip() not in existing]
     dupes  = len(apps) - len(unique)
 
     st.success(f"✅ Generated **{len(apps)}** startup(s)"
@@ -340,11 +347,9 @@ OUTPUT: respond with ONLY a valid JSON array, no markdown, no explanation.
         })
 
     if rows:
-        import pandas as pd
-        from ui.styles import color_decision
         df = pd.DataFrame(rows)
         st.dataframe(
-            df.style.applymap(color_decision, subset=["Decision"]),
+            _style_decision(df),
             use_container_width=True,
             height=min(80 + len(rows) * 38, 400),
         )
