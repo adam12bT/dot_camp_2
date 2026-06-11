@@ -260,15 +260,8 @@ def evaluate(app: dict, config: dict = None) -> EvaluationResult:
             bonus += 1
             bonus_items.append(blabel)
 
-    star_thresh  = config.get("star_threshold", 3)
-    check_thresh = config.get("checkmark_threshold", 2)
-
-    if base_decision == "Selected":
-        final = "Selected ★" if bonus >= star_thresh else "Selected"
-        emoji = "⭐" if bonus >= star_thresh else "✅"
-    else:
-        final = "Shortlisted ✓" if bonus >= check_thresh else "Shortlisted"
-        emoji = "🌟" if bonus >= check_thresh else "⚠️"
+    final = base_decision  # "Selected" or "Shortlisted"
+    emoji = "✅" if final == "Selected" else "⚠️"
 
     return EvaluationResult(
         startup_name=name,

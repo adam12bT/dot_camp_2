@@ -20,6 +20,10 @@ def render_results_table(active_config: dict, results_all: list) -> None:
         st.info("No startups yet. Use the tabs above to add startups manually, or upload a CSV / Typeform JSON.")
         return
 
+    # ── Persist overrides in session state ────────────────────────────────────
+    if "overrides" not in st.session_state:
+        st.session_state["overrides"] = {}
+
     st.markdown("### 📊 All Startups")
 
     # ── Filter bar ────────────────────────────────────────────────────────────
@@ -38,10 +42,14 @@ def render_results_table(active_config: dict, results_all: list) -> None:
     with fc3:
         search_text = st.text_input("🔍 Search startup name", key="ov_search", placeholder="Type to filter...")
 
+    # Apply effective decision (override takes precedence)
+    def _effective_decision(a, r):
+        return st.session_state["overrides"].get(a["startup_name"], r.final_decision)
+
     evaluated_all = list(zip(startups, results_all))
     filtered = evaluated_all
     if filter_decision:
-        filtered = [(a, r) for a, r in filtered if r.final_decision in filter_decision]
+        filtered = [(a, r) for a, r in filtered if _effective_decision(a, r) in filter_decision]
     if filter_sector:
         filtered = [(a, r) for a, r in filtered if a.get("sector") in filter_sector]
     if search_text:
@@ -55,8 +63,6 @@ def render_results_table(active_config: dict, results_all: list) -> None:
                                   "**Decision**", "**Reason**", "**Override**"]):
         col.markdown(lbl)
     st.divider()
-
-    pending_overrides: dict[str, tuple[str, dict]] = {}
 
     for idx, (a, r) in enumerate(filtered):
         row_cols = st.columns([3, 2, 2, 2, 3, 3, 3])
@@ -76,7 +82,10 @@ def render_results_table(active_config: dict, results_all: list) -> None:
             unsafe_allow_html=True,
         )
         row_cols[3].markdown(f"**{r.bonus_score}**")
-        row_cols[4].markdown(decision_badge(r.final_decision), unsafe_allow_html=True)
+
+        # Show effective decision (may be overridden)
+        eff_decision = _effective_decision(a, r)
+        row_cols[4].markdown(decision_badge(eff_decision), unsafe_allow_html=True)
 
         if r.rejection_reason:
             reason_html = f"<span style='color:#ff4d6d;font-size:11px'>✗ {r.rejection_reason}</span>"
@@ -86,25 +95,32 @@ def render_results_table(active_config: dict, results_all: list) -> None:
             reason_html = "<span style='color:#666;font-size:11px'>—</span>"
         row_cols[5].markdown(reason_html, unsafe_allow_html=True)
 
-        default_idx = OVERRIDE_OPTIONS.index(r.final_decision) if r.final_decision in OVERRIDE_OPTIONS else 0
+        default_idx = OVERRIDE_OPTIONS.index(eff_decision) if eff_decision in OVERRIDE_OPTIONS else 0
         new_dec = row_cols[6].selectbox(
             "override", OVERRIDE_OPTIONS, index=default_idx,
             key=f"ov_{idx}_{a['startup_name']}", label_visibility="collapsed",
         )
+        # Persist override immediately (survives rerun)
         if new_dec != r.final_decision:
-            pending_overrides[a["startup_name"]] = (new_dec, a)
+            st.session_state["overrides"][a["startup_name"]] = new_dec
+        elif a["startup_name"] in st.session_state["overrides"] and new_dec == r.final_decision:
+            # User reset back to engine decision — clear the override
+            del st.session_state["overrides"][a["startup_name"]]
 
-    # ── Pending overrides summary ─────────────────────────────────────────────
-    if pending_overrides:
+    # ── Active overrides summary ───────────────────────────────────────────────
+    active_overrides = st.session_state["overrides"]
+    if active_overrides:
         st.divider()
-        st.markdown(f"#### ✏️ {len(pending_overrides)} pending override(s):")
-        for name_ov, (dec_ov, _) in pending_overrides.items():
+        st.markdown(f"#### ✏️ {len(active_overrides)} active override(s):")
+        for name_ov, dec_ov in active_overrides.items():
             c = DECISION_COLORS.get(dec_ov, "#888")
             st.markdown(
                 f"- **{name_ov}** → <span style='color:{c};font-weight:700'>{dec_ov}</span>",
                 unsafe_allow_html=True,
             )
-        st.info("Overrides are visual only and reflected in the exported Excel under the 'Decision' column.")
+        if st.button("🗑 Clear all overrides", key="btn_clear_overrides"):
+            st.session_state["overrides"] = {}
+            st.rerun()
 
     # ── Remove startup ────────────────────────────────────────────────────────
     st.divider()
@@ -113,6 +129,10 @@ def render_results_table(active_config: dict, results_all: list) -> None:
         to_remove  = st.selectbox("Select startup to remove", ["— select —"] + names_list, key="remove_select")
         if to_remove != "— select —" and st.button("Remove", key="btn_remove"):
             st.session_state["startups"] = [a for a in startups if a["startup_name"] != to_remove]
+            st.session_state["overrides"].pop(to_remove, None)
+            # Invalidate results cache
+            st.session_state.pop("results_all", None)
+            st.session_state.pop("_results_key", None)
             st.success(f"Removed **{to_remove}**")
             st.rerun()
 
@@ -121,12 +141,15 @@ def render_results_table(active_config: dict, results_all: list) -> None:
     st.markdown("### 📥 Export to Excel")
     n_total = len(startups)
     n_filters = len(active_config.get("filters", []))
+    n_overrides = len(active_overrides)
     st.caption(
         f"Generates a fresh workbook from all {n_total} startup(s) using the **current filter pipeline** "
-        f"({n_filters} filter(s)). Adding or removing filters updates the export automatically."
+        f"({n_filters} filter(s))"
+        + (f", with **{n_overrides} decision override(s)** applied" if n_overrides else "")
+        + "."
     )
     if st.button("🔄 Generate Excel", type="primary"):
-        xl_bytes = build_excel(startups, active_config)
+        xl_bytes = build_excel(startups, active_config, overrides=active_overrides)
         st.download_button(
             "⬇️ Download Excel",
             data=xl_bytes,

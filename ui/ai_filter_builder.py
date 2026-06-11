@@ -47,8 +47,8 @@ def render_ai_code_builder() -> None:
                 try:
                     result = generate_filter_code(prompt.strip())
                     raw_code = result["code"]
-                    # Ensure \n sequences become real newlines for display
-                    display_code = raw_code.replace("\\n", "").replace("\n", "\n")
+                    # Convert escaped \n sequences into real newlines for display
+                    display_code = raw_code.replace("\\n", "\n")
                     st.session_state["ai_gen_label"] = result["label"]
                     st.session_state["ai_gen_code"]  = display_code
                     st.session_state["ai_gen_valid"] = None   # reset validation

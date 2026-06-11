@@ -29,11 +29,9 @@ GOVERNORATES = [
 
 # ── Decision colours ──────────────────────────────────────────────────────────
 DECISION_COLORS: dict[str, str] = {
-    "Selected ★":    "#00e5a0",
-    "Selected":      "#00b87a",
-    "Shortlisted ✓": "#f5c842",
-    "Shortlisted":   "#e5a800",
-    "Rejected":      "#ff4d6d",
+    "Selected":    "#00e5a0",
+    "Shortlisted": "#f5c842",
+    "Rejected":    "#ff4d6d",
 }
 OVERRIDE_OPTIONS = list(DECISION_COLORS.keys())
 

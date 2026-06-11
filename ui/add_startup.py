@@ -6,6 +6,7 @@ ui/add_startup.py – "Add new startup(s)" section with tabs:
   4. Typeform JSON
   5. AI Generate
   6. AI Filter Builder
+  7. Filter Guide
 """
 
 import pandas as pd
@@ -59,7 +60,7 @@ def _render_manual_tab(active_config: dict) -> None:
             age          = st.selectbox("Age of startup *", AGE_OPTIONS)
             founded_year = st.text_input("Year founded (e.g. 2023)")
         with c2:
-            governorate = st.selectbox("Governorate", GOVERNORATES)
+            governorate = st.text_input("Governorate / Region", placeholder="e.g. Tunis, Sfax, Nabeul…")
             sector      = st.selectbox("Sector", SECTORS)
         with c3:
             website  = st.text_input("Website")
@@ -338,19 +339,28 @@ def _render_ai_filter_builder_tab() -> None:
     render_ai_code_builder()
 
 
+# ── Tab 7 – Filter Guide ──────────────────────────────────────────────────────
+
+def _render_filter_guide_tab() -> None:
+    from ui.filter_guide import render_filter_guide
+    render_filter_guide()
+
+
 # ── Public entry-point ────────────────────────────────────────────────────────
 
 def render_add_startup(active_config: dict) -> None:
     st.markdown("### ➕ Add new startup(s)")
-    tab1, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "✏️ Manual Entry",
         "📋 Google Form CSV",
         "🗂 Typeform JSON",
         "🤖 AI Generate",
         "⚙️ AI Filter Builder",
+        "📖 Filter Guide",
     ])
     with tab1: _render_manual_tab(active_config)
     with tab3: _render_gform_csv_tab(active_config)
     with tab4: _render_json_tab(active_config)
     with tab5: _render_ai_tab(active_config)
     with tab6: _render_ai_filter_builder_tab()
+    with tab7: _render_filter_guide_tab()

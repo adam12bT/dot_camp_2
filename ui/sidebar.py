@@ -195,6 +195,9 @@ def render_sidebar() -> dict:
         ):
             st.session_state["filter_list"] = [dict(f) for f in base_cfg.get("filters", [])]
             st.session_state["_last_preset"] = chosen_name
+            # Clear bonus checkbox state so new preset starts fresh
+            for field_key, _, _ in base_cfg.get("bonus_fields", []):
+                st.session_state.pop(f"cfg_bonus_{field_key}", None)
 
         active_filters: list[dict] = []
 
